@@ -1,1 +1,247 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StudyFlow</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+body {
+  margin: 0;
+  font-family: Inter, system-ui, sans-serif;
+  background: linear-gradient(180deg, #eef2ff, #f8fafc);
+}
+
+.app {
+  max-width: 520px;
+  margin: 40px auto;
+  background: white;
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.08);
+}
+
+h1 {
+  font-family: "Plus Jakarta Sans";
+  text-align: center;
+}
+
+.subtitle {
+  text-align: center;
+  color: #6b7280;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+input, button {
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+}
+
+button {
+  background: #4f46e5;
+  color: white;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.session {
+  background: #f3f4f6;
+  padding: 10px;
+  border-radius: 10px;
+  margin-top: 8px;
+}
+
+.current {
+  margin-top: 20px;
+  padding: 18px;
+  background: #eef2ff;
+  border-radius: 14px;
+  text-align: center;
+}
+
+.timer {
+  font-size: 34px;
+  font-weight: bold;
+}
+
+.controls button {
+  margin-top: 10px;
+}
+
+.graph {
+  margin-top: 24px;
+}
+
+.bar {
+  height: 24px;
+  background: #4f46e5;
+  border-radius: 8px;
+  width: 0%;
+  transition: width .5s;
+}
+
+.hidden {
+  display: none;
+}
+
+footer {
+  text-align: center;
+  margin: 40px;
+  font-size: 13px;
+  color: #6b7280;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+  <h1>StudyFlow</h1>
+  <p class="subtitle">One calm session at a time</p>
+
+  <!-- AUTH -->
+  <div id="auth">
+    <input id="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password">
+    <button onclick="login()">Login / Sign Up</button>
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="hidden">
+    <input id="subject" placeholder="Subject">
+    <input id="minutes" type="number" placeholder="Minutes">
+    <button onclick="addSession()">Add Session</button>
+
+    <div id="list"></div>
+
+    <div class="current">
+      <div id="currentText">No session running</div>
+      <div class="timer" id="timer">00:00</div>
+
+      <div class="controls">
+        <button onclick="start()">Start</button>
+        <button onclick="pause()">Pause</button>
+        <button onclick="resume()">Resume</button>
+      </div>
+    </div>
+
+    <!-- DAILY STATS -->
+    <div class="graph">
+      <h3>Today’s Study</h3>
+      <div class="bar" id="bar"></div>
+      <p id="minutesToday">0 minutes</p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Made by Study Team • <a href="https://yourwebsite.com">yourwebsite.com</a>
+</footer>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC4W2Z6EIY1mUD7XlI8stEj31YmXCtyMQI",
+  authDomain: "study-95277.firebaseapp.com",
+  projectId: "study-95277"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let user;
+let sessions = [];
+let index = 0;
+let time = 0;
+let interval = null;
+let studiedToday = 0;
+
+window.login = async () => {
+  const email = email.value;
+  const password = password.value;
+  try {
+    user = (await signInWithEmailAndPassword(auth, email, password)).user;
+  } catch {
+    user = (await createUserWithEmailAndPassword(auth, email, password)).user;
+  }
+  auth.classList?.add("hidden");
+  document.getElementById("auth").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  load();
+};
+
+window.addSession = async () => {
+  await addDoc(collection(db, "sessions"), {
+    uid: user.uid,
+    subject: subject.value,
+    minutes: Number(minutes.value)
+  });
+  subject.value = minutes.value = "";
+  load();
+};
+
+async function load() {
+  sessions = [];
+  list.innerHTML = "";
+  const q = query(collection(db, "sessions"), where("uid", "==", user.uid));
+  (await getDocs(q)).forEach(d => sessions.push(d.data()));
+  sessions.forEach(s => {
+    const div = document.createElement("div");
+    div.className = "session";
+    div.textContent = `${s.subject} — ${s.minutes} min`;
+    list.appendChild(div);
+  });
+}
+
+window.start = () => {
+  if (!sessions.length) return;
+  const s = sessions[index];
+  time = s.minutes * 60;
+  currentText.textContent = "Studying: " + s.subject;
+  run();
+};
+
+function run() {
+  clearInterval(interval);
+  interval = setInterval(() => {
+    const m = Math.floor(time / 60);
+    const s = time % 60;
+    timer.textContent = `${m}:${s.toString().padStart(2,"0")}`;
+    time--;
+    if (time < 0) finish();
+  }, 1000);
+}
+
+window.pause = () => clearInterval(interval);
+window.resume = () => run();
+
+function finish() {
+  clearInterval(interval);
+  studiedToday += sessions[index].minutes;
+  updateGraph();
+  index++;
+  alert(index < sessions.length ? "Next: " + sessions[index].subject : "Done 🌱");
+}
+
+function updateGraph() {
+  minutesToday.textContent = studiedToday + " minutes";
+  bar.style.width = Math.min(studiedToday, 120) / 120 * 100 + "%";
+}
+</script>
+
+</body>
+</html>
